@@ -1,0 +1,301 @@
+<% 
+var currentUser = request.getCreator(); 
+if(!currentUser) { 
+currentUser = {}; 
+} 
+var payer = null; 
+if(request.getPayer().getCompany() != null) { 
+payer = request.getPayer().getCompany(); 
+} else { 
+payer = request.getCreator().getSpot().getCompany(); 
+} 
+
+ 
+var payerParentName = ""; 
+var payerParent = payer; 
+
+
+if (payer.getHoldingName() !== null){ 
+payerParentName = "(" + payer.getHoldingName() + ")"; 
+}else{ 
+  
+
+while(payerParent.getParent() != null){ 
+payerParent = payerParent.getParent(); 
+} 
+  
+
+if (payerParent.getId() === payer.getId()){ 
+payerParent = null; 
+}else{ 
+payerParentName = "(" + payerParent.getShortName()  + ")"; 
+} 
+} 
+  
+  
+  
+var mainAccount = request.payer; 
+var producer = request.producer; 
+var classLogger = Java.type("globals.CyntekaLogger"); 
+var classOptions = Java.type("services.core.OptionsService"); 
+var classUtil = Java.type("helpers.core.Util"); 
+var classOrders = Java.type("services.core.OrderService"); 
+var orderService = classOrders.getInstance(); 
+var isLicense1C = producer && Java.type("models.core.Company.CompanyLicenseStatus").COMPANY_LICENSE_STATUS_PAYED_1C.equals(producer.getLicenseStatus()); 
+var additionalData = JSON.parse(request.getAdditionalJson()); 
+  
+
+var applicationService = Java.type("services.core.ApplicationService"); 
+  
+
+var role = applicationService.getInstance().getRole(); 
+  
+
+var options = classOptions.getNewInstance().getDefaultOptions(); 
+  
+
+function formatNumber(n) { 
+return n ? n.toString().replace(/\./g, ",") : ""; 
+} 
+  
+ 
+function formatName(name){ 
+if (!name){ 
+return ""; 
+} 
+return name + " "; 
+} 
+  
+
+function isEmpty(s) { 
+return !s && ("" + s).trim().length > 0; 
+} 
+classLogger.debug("Options = " + options); 
+classLogger.debug("payer = " + payer); 
+  
+
+var prepaid = request.getPrepaidOffer() != null; 
+  
+
+
+var orderLink = ""; 
+var sendLink = ""; 
+var chatLink = ""; 
+var isLimited = false; 
+  
+
+var reqLink = options.getProdavayExternalAddress() + "/core/supplier/company/" + payer.id + "/requisites"; 
+var consigneeReqLink = null; 
+  
+  
+if(consignee){ 
+var consigneeReqLink = options.getProdavayExternalAddress() + "/core/supplier/company/" + consignee.id + "/requisites"; 
+} 
+if (role == "master"){ 
+orderLink = options.getProdavayExternalAddress() + "/core/supplier/registry?requestId=" + request.getId() + "&id=" + request.getFirstOrder().getId(); 
+  
+
+if (limitedUrl != null) { 
+sendLink = limitedUrl + "&action=send"; 
+chatLink = limitedUrl + "&action=chat"; 
+reqLink = limitedReqUrl; 
+consigneeReqLink = consigneeLimitedReqUrl; 
+isLimited = true; 
+} else { 
+var tempLink = options.getProdavayExternalAddress() + "/core/supplier/registry?requestId=" + request.getId() + "&id=" + request.getFirstOrder().getId(); 
+sendLink = tempLink + "&action=send"; 
+chatLink = tempLink + "&action=chat" + itemUrl; 
+} 
+}else { 
+sendLink= options.getProdavayExternalAddress() + "/core/fill-request/" + request.getCode(); 
+chatLink= options.getProdavayExternalAddress() + "/core/fill-request/" + request.getCode() + "#?chat_expanded=true"; 
+} 
+  
+  
+var classJson = Java.type("play.libs.Json"); 
+var classBoolean = Java.type("java.lang.Boolean"); 
+var trustfulEmail = true; 
+if (request.getAdditionalJson() != null) { 
+var valueFromAdditionalJson = classJson.parse(request.getAdditionalJson()).get("showContacts"); 
+if (valueFromAdditionalJson != null) { 
+trustfulEmail = classBoolean.parseBoolean(valueFromAdditionalJson.toString()); 
+} 
+} 
+  
+
+var additionalInfoList = []; 
+  
+
+
+if(request.getType() != 'NORMAL' || (additionalData && additionalData.finishDateCell && additionalData.finishDateCell !== undefined && additionalData.finishDateCell !== null)) { 
+additionalInfoList.push('Поставить к ' + additionalData.finishDateCellText); 
+} 
+  
+  
+
+if(request.getFirstOrder() != null && request.getFirstOrder().getIsDeliveryNeed() != null && 
+request.getFirstOrder().getIsDeliveryNeed() == true && request.getFirstOrder().getDeliveryAddress()) { 
+additionalInfoList.push('Требуется доставка по адресу: ' + request.getFirstOrder().getDeliveryAddress()); 
+} 
+else{ 
+additionalInfoList.push('Доставка не требуется'); 
+} 
+  
+ 
+if(request.getComment() != null && request.getComment() != "") { 
+var commentSpan='<span style="color:red;">' + request.getComment() + '</span>'; 
+additionalInfoList.push(commentSpan);
+} 
+  
+  
+
+if(request.getFirstOrder().getDelay() != null) { 
+if(request.getFirstOrder().getDelay() != 0) { 
+additionalInfoList.push('Требуется отсрочка платежа, ' + request.getFirstOrder().getDelay() +  'дней');  
+} 
+} 
+%> 
+  
+
+<html> 
+<head> 
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8"> 
+</head> 
+<body> 
+<div align="left">
+    <% if (request.getFirstOrder() != null) { %>
+    <div style="line-height: 24px;">
+        Здравствуйте.<br/>
+        Прошу выставить счет на заявку
+        <%  if (request.getFirstOrder().getSenderId() != null)  { %>
+        <a style="color: #333; text-decoration: none;" >
+            [cynteka id <%= request.getFirstOrder().getSenderId() %></a>]
+        <% } else{ %>
+        <a  <% if (producerHasAccess === true) { %> style="color: #4a90e2; text-decoration: underline;"  href="<%=orderLink%>" <% } else{ %>  style="color: #333; text-decoration: none;" <%}%> >
+        [cynteka id <%= request.getFirstOrder().getId() %></a>]
+        <% } %>
+
+
+        – <a style="color: #4a90e2; text-decoration: underline;" href="<%=limitedOrderDownloadUrl%>">скачать заявку</a>,
+
+
+        <a <% if (producerHasAccess === true) { %> style="color: #4a90e2; text-decoration: underline;"  href="<%=options.getProdavayExternalAddress() %>/core/companies/<%=payer.getId()%>/card" <% } else{ %>  style="color: #333; text-decoration: none;" <%}%> >
+        <br />
+        плательщик: <%= payer.getShortName() %> – <a style="color: #4a90e2; text-decoration: underline;" href="<%=reqLink%>">скачать</a>.
+        <% if (consigneeReqLink != null) { %>
+        <br />
+        грузополучатель: <%= consignee.getShortName() %> – <a style="color: #4a90e2; text-decoration: underline;" href="<%=consigneeReqLink%>">скачать</a>.
+        <% } %>
+
+
+        <br />
+        Для отправки счета нажмите <a style="color: #ff0013; text-decoration: underline;" href="<%= sendLink %>">ЗДЕСЬ</a>.
+
+
+        <%  if (companyOfficialLetterUrl != null)  { %>
+        <div style="color: red">Внимание!</div> Наша компания внедрила систему управления закупками Синтека.Комплектация. Просим ознакомиться с письмом – <a style="color: #4a90e2" href="<%=options.getExternalAddress() + companyOfficialLetterUrl%>">скачать</a>.
+        <% } %>
+    </div>
+    <% } else { %>
+    <div style="line-height: 24px;">
+        Здравствуйте.<br/>
+        Прошу выставить счет на заявку.
+    </div>
+    <% } %>
+    <% if (request.getFiles().length > 0) { %>
+    <div>К заявке приложены файлы:</div>
+    <div style="margin-top: 10px;margin-bottom: 10px;">
+
+
+        <% for(var i =0 ;i < request.getFiles().length; ++ i ){
+        var file = request.getFiles()[i];
+        %>
+        <% if (file.getIsPublic()) {%>
+        <a href="<%=options.getProdavayExternalAddress()%>/core/supplier/download/order/<%=request.getFirstOrder().getId()%>/file/<%=file.getId()%>/limited?id=<%=request.getFirstOrder().getId()%>&requestId=<%=request.getId()%>&code=<%=request.getCode()%>">
+            <%=file.getName()%>
+        </a><br />
+        <% } %>
+        <% } %>
+    </div>
+    <% } %>
+
+
+    <br>
+    <%for(var i = 0; i < items.length; i++) {
+    var item = items[i];
+    %>
+    <%if (!!item.getCount()) { %>
+    <div>
+        <%=i + 1%>.
+        <%if(item.getOrderItem().getGood() != null) {%>
+        <%=item.getOrderItem().getGood().getName()%>
+        <%} else {%>
+        <%=item.getOrderItem().getGoodName()%>
+        <%}%>
+        - <%=formatNumber(item.getCount())%>
+
+
+        <%if(item.getOrderItem().getUnit() != null) {%>
+        <%=item.getOrderItem().getUnit().getName()%>
+        <%}%>
+        <%if (item.getOrderItem().getOrderItemStartDate() != null) {%>
+        <%=" (требуется к " + orderService.convertAndGetFormatOrderItemStartDate(item.getOrderItem()) + ") "%>
+        <%}%>
+
+
+        <%if(item.getComment() != null) {%>
+        (<%=item.getComment()%>)
+        <%}%>
+        <%if(item.getOrderItem().getSenderId() != null) {%>
+        (ID позиции <%=item.getOrderItem().getSenderId()%>)
+        <%}%>
+    </div>
+    <% } %>
+    <% } %>
+
+
+    <br>
+    <div>Дополнительная информация:</div>
+
+
+    <% for (var i = 0; i < additionalInfoList.length; ++ i) { %>
+    <div style="text-align: left;"><%= (i + 1) + '. ' + additionalInfoList[i] %></div>
+    <% } %>
+
+
+    <%if(request.getRecommendedDate() != null) {%>
+    <div style="text-align:left;">
+        Прошу подать предложение до <%=classUtil.timeFormat(request.getRecommendedDate())%>.
+    </div>
+    <%}%>
+    <br>
+    <div>
+        Если необходимо задать вопрос по заявке, нажмите <a style="color: #4a90e2; text-decoration: underline;" href="<%=chatLink%>">ЗДЕСЬ</a>.
+    </div>
+    <div>
+        <% if (request.getCreator() != null && request.getCreator().getLastName() != null) { %>
+        <br>
+        С уважением,<br>
+        <%= payer.getShortName() %><br>
+        <%= formatName(request.getCreator().getLastName()) +  formatName(request.getCreator().getFirstName()) + formatName(request.getCreator().getMiddleName())%><br>
+        <% if (trustfulEmail == true) { %>
+        <%= request.getCreator().getEmail() %><br>
+        <%= request.getCreator().getPhonesString() %><br>
+        <% } %>
+        <% } %>
+    </div>
+    <% if (isLimited === false) { %>
+
+
+    <% if (producerHasAccess === true) { %>
+    <div style="
+            font-size: 12px; padding-top: 10px; padding-bottom: 30px;">
+        Настройка уведомлений: <a href="https://prodavay.sel-be.ru/core/cabinet/personal/notifications" style="
+            color: #4a90e2; text-decoration: underline;">Личный кабинет</a>
+    </div>
+    <% } %>
+    <a href="+78003338460">Cлужба поддержки +7(800)333-84-60</a>
+<% } %>
+</div>
+</body> 
+</html> 
